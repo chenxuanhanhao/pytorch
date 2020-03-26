@@ -431,9 +431,16 @@ class CAFFE2_API Tensor {
     return impl_->requires_grad();
   }
 
+  /// Return a mutable reference to the gradient. This is conventionally
+  /// used as `t.grad() = x` to set a gradient to a completely new tensor.
   Tensor& grad() {
     return impl_->grad();
   }
+
+  /// This function returns an undefined tensor by default and returns a defined tensor
+  /// the first time a call to `backward()` computes gradients for this Tensor.
+  /// The attribute will then contain the gradients computed and future calls
+  /// to `backward()` will accumulate (add) gradients into it.
   const Tensor& grad() const {
     return impl_->grad();
   }
@@ -505,11 +512,38 @@ class CAFFE2_API Tensor {
   template <typename T>
   using hook_return_var_t = std::enable_if_t<std::is_same<typename std::result_of<T&(Tensor)>::type, Tensor>::value, unsigned>;
 
-  // Returns the index of the hook in the list which can be used to remove hook
-  // Register a hook with no return value
+  /// Registers a backward hook.
+  ///
+  /// The hook will be called every time a gradient with respect to the Tensor is computed.
+  /// The hook should have one of the following signature:
+  /// ```
+  /// hook(Tensor grad) -> Tensor
+  /// ```
+  /// ```
+  /// hook(Tensor grad) -> void
+  /// ```
+  /// The hook should not modify its argument, but it can optionally return a new gradient
+  /// which will be used in place of `grad`.
+  ///
+  /// This function returns the index of the hook in the list which can be used to remove hook.
+  ///
+  /// Example:
+  /// ```
+  /// auto v = torch::tensor({0., 0., 0.}, torch::requires_grad());
+  /// auto h = v.register_hook([](torch::Tensor grad){ return grad * 2; }); // double the gradient
+  /// v.backward(torch::tensor({1., 2., 3.}));
+  /// // This prints:
+  /// // ```
+  /// //  2
+  /// //  4
+  /// //  6
+  /// // [ CPUFloatType{3} ]
+  /// // ```
+  /// std::cout << v.grad() << std::endl;
+  /// v.remove_hook(h);  // removes the hook
+  /// ```
   template <typename T>
   hook_return_void_t<T> register_hook(T&& hook) const;
-  // Register a hook with variable return value
   template <typename T>
   hook_return_var_t<T> register_hook(T&& hook) const;
 
@@ -518,7 +552,7 @@ private:
 
 public:
 
-  // Remove hook at given position
+  /// Remove hook at given position
   void remove_hook(unsigned pos) const;
 
   // View Variables
